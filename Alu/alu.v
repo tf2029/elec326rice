@@ -65,12 +65,70 @@ module alu (
 	input 	      carry_in_pi, // Use for ADDC
 	input 	      borrow_in_pi, // Use for SUBB
 	
-	output [15:0] alu_result_po,// The 16-bit result disregarding carry out or borrow
-	output 	      carry_out_po, // Propagate carry_in unless an arithmetic/STC instruction generates a new carry 
-	output 	      borrow_out_po // Propagate borrow_in unless an arithmetic/STB instruction generates a new borrow
+	output reg [15:0] alu_result_po,// The 16-bit result disregarding carry out or borrow
+	output reg	      carry_out_po, // Propagate carry_in unless an arithmetic/STC instruction generates a new carry 
+	output reg        borrow_out_po // Propagate borrow_in unless an arithmetic/STB instruction generates a new borrow
 );
 
-   
+reg [16:0] extended_result;
 
 
+always @(*) begin
+    alu_result_po  = 16'h0000;
+    carry_out_po   = carry_in_pi;
+    borrow_out_po  = borrow_in_pi;
+    extended_result = 17'h00000;
+
+    if (arith_2op_pi) begin
+        case (alu_func_pi)
+            `ADD: begin
+                extended_result = {1'b0, reg1_data_pi} + {1'b0, reg2_data_pi};
+            	{carry_out_po, alu_result_po} = extended_result;
+            end
+            `ADDC: begin
+                extended_result = {1'b0, reg1_data_pi} + {1'b0, reg2_data_pi} + carry_in_pi;           
+                {carry_out_po, alu_result_po} = extended_result;
+            end
+            `SUB: begin
+                extended_result = {1'b0, reg1_data_pi} - {1'b0, reg2_data_pi};
+                alu_result_po = extended_result[15:0];
+                borrow_out_po = (reg1_data_pi < reg2_data_pi);
+            end
+            `SUBB: begin
+                extended_result = {1'b0, reg1_data_pi} - {1'b0, reg2_data_pi} - borrow_in_pi;
+                alu_result_po = extended_result[15:0];
+                borrow_out_po = ({1'b0, reg1_data_pi} < ({1'b0, reg2_data_pi} + borrow_in_pi));
+            end
+            `AND:  alu_result_po = reg1_data_pi & reg2_data_pi;
+            `OR:   alu_result_po = reg1_data_pi | reg2_data_pi;
+            `XOR:  alu_result_po = reg1_data_pi ^ reg2_data_pi;
+            `XNOR: alu_result_po = ~(reg1_data_pi ^ reg2_data_pi);
+            default: ;
+        endcase
+    end
+    else if (arith_1op_pi) begin
+        case (alu_func_pi)
+            `NOT:    alu_result_po = ~reg1_data_pi;
+            `SHIFTL: alu_result_po = reg1_data_pi << 1;
+            `SHIFTR: alu_result_po = reg1_data_pi >> 1;
+            `CP:     alu_result_po = reg1_data_pi;
+            default: ;
+        endcase
+    end
+    else if (addi_pi) begin
+        extended_result = {1'b0, reg1_data_pi} + {11'b0, immediate_pi};
+        {carry_out_po, alu_result_po} = extended_result;
+    end
+    else if (subi_pi) begin
+        extended_result = {1'b0, reg1_data_pi} - {11'b0, immediate_pi};
+        alu_result_po = extended_result[15:0];
+        borrow_out_po = ({1'b0, reg1_data_pi} < {11'b0, immediate_pi});
+    end
+    else if (load_or_store_pi) begin
+        alu_result_po = reg1_data_pi + {10'b0, immediate_pi};
+    end
+
+    if (stc_cmd_pi) carry_out_po = 1'b1;
+    if (stb_cmd_pi) borrow_out_po = 1'b1;
+end
 endmodule // alu
